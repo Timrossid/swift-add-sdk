@@ -29,30 +29,35 @@ export const validateConfig = (config) => {
     const errors = [];
     if (!config.websiteId) {
         errors.push({
+            type: 'UNKNOWN_ERROR',
             code: 'MISSING_WEBSITE_ID',
             message: 'websiteId is required'
         });
     }
     if (!config.walletAddress) {
         errors.push({
+            type: 'UNKNOWN_ERROR',
             code: 'MISSING_WALLET_ADDRESS',
             message: 'walletAddress is required'
         });
     }
     else if (!isValidWalletAddress(config.walletAddress)) {
         errors.push({
+            type: 'UNKNOWN_ERROR',
             code: 'INVALID_WALLET_ADDRESS',
             message: 'walletAddress must be a valid Ethereum address (0x...)'
         });
     }
     if (config.apiBaseUrl && !isValidUrl(config.apiBaseUrl)) {
         errors.push({
+            type: 'UNKNOWN_ERROR',
             code: 'INVALID_API_URL',
             message: 'apiBaseUrl must be a valid URL'
         });
     }
     if (config.theme?.primaryColor && !isValidColor(config.theme.primaryColor)) {
         errors.push({
+            type: 'UNKNOWN_ERROR',
             code: 'INVALID_PRIMARY_COLOR',
             message: 'primaryColor must be a valid hex color'
         });
@@ -217,4 +222,60 @@ export const trackAdEvent = (event, slotId, websiteId, additionalData) => {
     }).catch(error => {
         console.warn('Failed to track ad event:', error);
     });
+};
+/**
+ * Execute an async function with exponential backoff retries.
+ */
+export const retryAsync = async (fn, options) => {
+    const { retries = 3, delay = 500, factor = 2, retryOn = (error) => {
+        // Don't retry if aborted
+        if (error?.name === 'AbortError')
+            return false;
+        // Stop on 4xx client errors, retry on 5xx or network errors
+        if (error && error.status && typeof error.status === 'number') {
+            if (error.status >= 400 && error.status < 500) {
+                return false;
+            }
+        }
+        return true;
+    }, signal, } = options || {};
+    let currentAttempt = 0;
+    let currentDelay = delay;
+    while (currentAttempt <= retries) {
+        if (signal?.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
+        }
+        try {
+            return await fn();
+        }
+        catch (error) {
+            if (currentAttempt === retries || !retryOn(error)) {
+                throw error;
+            }
+            currentAttempt++;
+            // Wait for currentDelay, but listen to abort signal
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    cleanup();
+                    resolve();
+                }, currentDelay);
+                const onAbort = () => {
+                    clearTimeout(timeout);
+                    cleanup();
+                    reject(new DOMException('Aborted', 'AbortError'));
+                };
+                const cleanup = () => {
+                    if (signal) {
+                        signal.removeEventListener('abort', onAbort);
+                    }
+                };
+                if (signal) {
+                    signal.addEventListener('abort', onAbort);
+                }
+            });
+            // Exponentially increase delay
+            currentDelay *= factor;
+        }
+    }
+    throw new Error('Unreachable: retry loop terminated unexpectedly');
 };

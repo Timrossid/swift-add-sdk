@@ -62,4 +62,14 @@ export declare const parseSlotConfigFromUrl: () => Partial<Ad402Config>;
  * Track ad events
  */
 export declare const trackAdEvent: (event: "view" | "click" | "error", slotId: string, websiteId: string, additionalData?: Record<string, any>) => void;
+/**
+ * Execute an async function with exponential backoff retries.
+ */
+export declare const retryAsync: <T>(fn: () => Promise<T>, options?: {
+    retries?: number;
+    delay?: number;
+    factor?: number;
+    retryOn?: (error: any) => boolean;
+    signal?: AbortSignal;
+}) => Promise<T>;
 //# sourceMappingURL=index.d.ts.map

@@ -2,6 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAd402Context } from './Ad402Provider';
+import { retryAsync } from '../utils';
 // Default slot dimensions
 const SLOT_DIMENSIONS = {
     banner: { width: 728, height: 90 },
@@ -19,7 +20,6 @@ const getOptimalFontSizes = (width, height) => {
         small: Math.max(6, baseSize * 0.04)
     };
 };
-// Default loading component
 const DefaultLoadingComponent = () => (_jsx("div", { style: {
         display: 'flex',
         alignItems: 'center',
@@ -30,8 +30,9 @@ const DefaultLoadingComponent = () => (_jsx("div", { style: {
         color: '#666'
     }, children: "Loading..." }));
 // Default error component
-const DefaultErrorComponent = ({ error }) => (_jsxs("div", { style: {
+const DefaultErrorComponent = ({ error, onRetry, isOffline }) => (_jsxs("div", { style: {
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         height: '100%',
@@ -39,8 +40,21 @@ const DefaultErrorComponent = ({ error }) => (_jsxs("div", { style: {
         fontSize: '10px',
         color: '#c00',
         textAlign: 'center',
-        padding: '8px'
-    }, children: ["Error: ", error.message] }));
+        padding: '8px',
+        backgroundColor: '#fff0f0',
+        border: '1px solid #ffcccc'
+    }, children: [_jsx("div", { style: { marginBottom: '4px', fontWeight: 'bold' }, children: isOffline ? "Please check your internet connection." : "We're having trouble loading this ad." }), _jsx("div", { style: { opacity: 0.8, fontSize: '8px', marginBottom: '8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }, children: error.message }), onRetry && (_jsx("button", { onClick: (e) => {
+                e.stopPropagation();
+                onRetry();
+            }, style: {
+                padding: '4px 8px',
+                fontSize: '10px',
+                backgroundColor: '#c00',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+            }, children: "Retry" }))] }));
 // Default empty slot component
 const DefaultEmptySlotComponent = ({ slotId, price, size, queueInfo, onClick, clickable, theme }) => {
     const dimensions = SLOT_DIMENSIONS[size];
@@ -71,25 +85,61 @@ const DefaultEmptySlotComponent = ({ slotId, price, size, queueInfo, onClick, cl
             }
         }, children: [_jsx("div", { style: { fontSize: fontSizes.icon, marginBottom: '2px', lineHeight: '1' }, children: "\uD83D\uDCB3" }), _jsxs("div", { style: { fontSize: fontSizes.title, fontWeight: '600', marginBottom: '1px', lineHeight: '1.1' }, children: ["Ad Slot: ", slotId] }), _jsxs("div", { style: { fontSize: fontSizes.subtitle, marginBottom: '1px', lineHeight: '1.1', color: '#666' }, children: [price, " USDC \u2022 ", size] }), queueInfo && !queueInfo.isAvailable && (_jsxs("div", { style: { fontSize: fontSizes.small, marginBottom: '1px', lineHeight: '1.1', color: theme.primaryColor, fontWeight: 'bold' }, children: [queueInfo.totalInQueue, " in queue"] })), _jsx("div", { style: { fontSize: fontSizes.small, marginBottom: '1px', lineHeight: '1.1', color: '#666' }, children: "Polygon USDC" }), clickable && (_jsx("div", { style: { fontSize: fontSizes.small, lineHeight: '1.1', color: '#666' }, children: queueInfo && !queueInfo.isAvailable ? 'Click to bid' : 'Click to purchase' }))] }));
 };
-export const Ad402Slot = ({ slotId, size = 'banner', price = '0.10', durations = ['30m', '1h', '6h', '24h'], category = 'general', className = '', clickable = true, dimensions: customDimensions, onSlotClick, onAdLoad, onAdError, loadingComponent, errorComponent, emptySlotComponent, ...props }) => {
+export const Ad402Slot = ({ slotId, size = 'banner', price = '0.10', durations = ['30m', '1h', '6h', '24h'], category = 'general', className = '', clickable = true, dimensions: customDimensions, onSlotClick, onAdLoad, onAdError, onError, loadingComponent, errorComponent, emptySlotComponent, ...props }) => {
     const { config, apiBaseUrl } = useAd402Context();
     const [adData, setAdData] = useState(null);
     const [queueInfo, setQueueInfo] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isRetrying, setIsRetrying] = useState(false);
     const [error, setError] = useState(null);
+    const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false);
     const slotRef = useRef(null);
+    // Network status listeners
+    useEffect(() => {
+        if (typeof window === 'undefined')
+            return;
+        const handleOnline = () => setIsOffline(false);
+        const handleOffline = () => setIsOffline(true);
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
     // Get slot dimensions
     const slotDimensions = customDimensions || SLOT_DIMENSIONS[size];
     const fontSizes = getOptimalFontSizes(slotDimensions.width, slotDimensions.height);
     // Fetch ad data
-    const fetchAdData = useCallback(async () => {
+    const fetchAdData = useCallback(async (isManualRetry = false) => {
         try {
-            setIsLoading(true);
-            setError(null);
-            const response = await fetch(`${apiBaseUrl}/api/ads/${slotId}`);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch ad data: ${response.status}`);
+            if (isManualRetry) {
+                setIsRetrying(true);
             }
+            else {
+                setIsLoading(true);
+            }
+            setError(null);
+            const controller = new AbortController();
+            const response = await retryAsync(async () => {
+                if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                    throw new Error('NETWORK_OFFLINE');
+                }
+                const res = await fetch(`${apiBaseUrl}/api/ads/${slotId}`, {
+                    signal: controller.signal
+                });
+                if (!res.ok) {
+                    const err = new Error(`Failed to fetch ad data: ${res.status}`);
+                    err.status = res.status;
+                    throw err;
+                }
+                return res;
+            }, {
+                retries: 3,
+                delay: 500,
+                factor: 2,
+                signal: controller.signal
+            });
             const data = await response.json();
             setAdData(data);
             if (data.hasAd && onAdLoad) {
@@ -97,20 +147,27 @@ export const Ad402Slot = ({ slotId, size = 'banner', price = '0.10', durations =
             }
         }
         catch (err) {
-            const error = {
+            const isNetworkOffline = err instanceof Error && err.message === 'NETWORK_OFFLINE';
+            const newError = {
+                type: isNetworkOffline ? 'NETWORK_ERROR' : 'API_ERROR',
                 code: 'FETCH_ERROR',
-                message: err instanceof Error ? err.message : 'Failed to fetch ad data',
-                details: err
+                message: isNetworkOffline ? 'No internet connection' : (err instanceof Error ? err.message : 'Failed to fetch ad data'),
+                details: err,
+                originalError: err
             };
-            setError(error);
+            setError(newError);
             if (onAdError) {
                 onAdError(err instanceof Error ? err : new Error('Failed to fetch ad data'));
+            }
+            if (onError) {
+                onError(newError);
             }
         }
         finally {
             setIsLoading(false);
+            setIsRetrying(false);
         }
-    }, [apiBaseUrl, slotId, onAdLoad, onAdError]);
+    }, [apiBaseUrl, slotId, onAdLoad, onAdError, onError]);
     // Fetch queue info
     const fetchQueueInfo = useCallback(async () => {
         try {
@@ -160,7 +217,7 @@ export const Ad402Slot = ({ slotId, size = 'banner', price = '0.10', durations =
         }
     }, [slotId, size, price, durations, category, config.websiteId]);
     // Loading state
-    if (isLoading) {
+    if (isLoading || isRetrying) {
         return (_jsx("div", { ref: slotRef, className: `ad402-slot ${className}`, style: {
                 width: slotDimensions.width,
                 height: slotDimensions.height,
@@ -172,7 +229,7 @@ export const Ad402Slot = ({ slotId, size = 'banner', price = '0.10', durations =
                 overflow: 'hidden',
                 position: 'relative',
                 margin: '0 auto'
-            }, children: loadingComponent || _jsx(DefaultLoadingComponent, {}) }));
+            }, children: isRetrying ? (_jsx("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: '#666' }, children: "Retrying..." })) : (loadingComponent || _jsx(DefaultLoadingComponent, {})) }));
     }
     // Error state
     if (error) {
@@ -187,7 +244,7 @@ export const Ad402Slot = ({ slotId, size = 'banner', price = '0.10', durations =
                 overflow: 'hidden',
                 position: 'relative',
                 margin: '0 auto'
-            }, children: errorComponent || _jsx(DefaultErrorComponent, { error: error }) }));
+            }, children: errorComponent || _jsx(DefaultErrorComponent, { error: error, onRetry: () => fetchAdData(true), isOffline: isOffline }) }));
     }
     // Ad exists - show the ad
     if (adData?.hasAd && adData.contentUrl) {

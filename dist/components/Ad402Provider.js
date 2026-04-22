@@ -10,6 +10,7 @@ export const Ad402Provider = ({ config, children }) => {
     useEffect(() => {
         if (!config.websiteId) {
             setError({
+                type: 'UNKNOWN_ERROR',
                 code: 'MISSING_WEBSITE_ID',
                 message: 'websiteId is required in Ad402Config'
             });
@@ -17,6 +18,7 @@ export const Ad402Provider = ({ config, children }) => {
         }
         if (!config.walletAddress) {
             setError({
+                type: 'UNKNOWN_ERROR',
                 code: 'MISSING_WALLET_ADDRESS',
                 message: 'walletAddress is required in Ad402Config'
             });
@@ -25,6 +27,7 @@ export const Ad402Provider = ({ config, children }) => {
         // Basic wallet address validation (Ethereum address format)
         if (!/^0x[a-fA-F0-9]{40}$/.test(config.walletAddress)) {
             setError({
+                type: 'UNKNOWN_ERROR',
                 code: 'INVALID_WALLET_ADDRESS',
                 message: 'walletAddress must be a valid Ethereum address (0x...)'
             });

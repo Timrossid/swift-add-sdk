@@ -99,6 +99,8 @@ export interface Ad402SlotProps extends Ad402SlotConfig {
     onAdLoad?: (adData: AdData) => void;
     /** Callback when ad fails to load */
     onAdError?: (error: Error) => void;
+    /** Callback for SDK errors */
+    onError?: (error: Ad402Error) => void;
     /** Loading component */
     loadingComponent?: ReactNode;
     /** Error component */
@@ -123,9 +125,13 @@ export interface QueueResponse {
     nextActivation?: string;
     isAvailable: boolean;
 }
+export type Ad402ErrorType = "NETWORK_ERROR" | "API_ERROR" | "TIMEOUT_ERROR" | "UNKNOWN_ERROR";
 export interface Ad402Error {
-    code: string;
+    type: Ad402ErrorType;
     message: string;
+    statusCode?: number;
+    originalError?: unknown;
+    code?: string;
     details?: any;
 }
 export interface UseAd402SlotReturn {
