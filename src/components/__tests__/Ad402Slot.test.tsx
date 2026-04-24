@@ -59,7 +59,7 @@ describe('Ad402Slot Error Handling', () => {
             } as any)
         );
 
-        render(<TestWrapper><Ad402Slot slotId="slot-1" /></TestWrapper>);
+        render(<TestWrapper><Ad402Slot slotId="slot-1" size="banner" price="0.25" /></TestWrapper>);
 
         expect(screen.getByText('Loading...')).toBeInTheDocument();
     });
@@ -77,7 +77,7 @@ describe('Ad402Slot Error Handling', () => {
         );
 
         await act(async () => {
-            render(<TestWrapper><Ad402Slot slotId="slot-1" /></TestWrapper>);
+            render(<TestWrapper><Ad402Slot slotId="slot-1" size="banner" price="0.25" /></TestWrapper>);
         });
 
         expect(screen.getByText('Please check your internet connection.')).toBeInTheDocument();
@@ -95,7 +95,7 @@ describe('Ad402Slot Error Handling', () => {
         );
 
         await act(async () => {
-            render(<TestWrapper><Ad402Slot slotId="slot-1" /></TestWrapper>);
+            render(<TestWrapper><Ad402Slot slotId="slot-1" size="banner" price="0.25" /></TestWrapper>);
         });
 
         expect(screen.getByText("We're having trouble loading this ad.")).toBeInTheDocument();
@@ -116,7 +116,7 @@ describe('Ad402Slot Error Handling', () => {
         );
 
         await act(async () => {
-            render(<TestWrapper><Ad402Slot slotId="slot-1" /></TestWrapper>);
+            render(<TestWrapper><Ad402Slot slotId="slot-1" size="banner" price="0.25" /></TestWrapper>);
         });
 
         const retryButton = screen.getByRole('button', { name: /Retry/i });
